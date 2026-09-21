@@ -8,15 +8,15 @@ import subprocess
 import threading
 import importlib.util
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, filedialog
 from datetime import datetime
 
 # ============================================================
-# W.A 1.4 ELITE — Windows Security & Analysis Suite
+# W.A 1.6.1 ELITE — Windows Security & Analysis Suite (Advanced)
 # ============================================================
 
 APP_NAME = "W.A"
-APP_VERSION = "1.4 Elite"
+APP_VERSION = "1.6.1 Elite Advanced"
 APP_TITLE = "Windows Security & Analysis Matrix"
 LOCALHOST = "127.0.0.1"
 
@@ -82,7 +82,14 @@ class WAApp:
         self.history = []
         self.history_index = 0
         self.command_running = False
-        self.spoofed_ip = None  # Giả lập đổi IP online qua môi trường ứng dụng
+        self.spoofed_ip = None
+        
+        # Trạng thái God Mode và Background
+        self.god_mode_active = False
+        self.bg_image_path = None
+        self.matrix_rain_active = True
+
+        self.original_ipv4 = self.get_local_ipv4()
 
         self.root.title(f"{APP_NAME} — {APP_TITLE}")
         self.root.configure(bg=BG)
@@ -93,38 +100,51 @@ class WAApp:
         self.root.bind("<F11>", lambda e: self.root.attributes("-fullscreen", not self.root.attributes("-fullscreen")))
 
         self.build_gui()
-        self.print_banner()
-        self.root.after(200, self.startup_sequence)
+        self.print_banner_and_startup()
+
+    def get_local_ipv4(self):
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            s.close()
+            return ip
+        except:
+            return "192.168.1.100"
 
     def build_gui(self):
         # Header Matrix Style
-        header = tk.Frame(self.root, bg=BG)
-        header.pack(fill="x", padx=20, pady=(15, 5))
+        self.header = tk.Frame(self.root, bg=BG)
+        self.header.pack(fill="x", padx=20, pady=(15, 5))
 
-        tk.Label(header, text="╔═W.A═MATRIX═╗", font=("Consolas", 18, "bold"), fg=GREEN, bg=BG).pack(side="left")
-        tk.Label(header, text=f"  [{APP_VERSION}]", font=("Consolas", 11, "bold"), fg=CYAN, bg=BG).pack(side="left", pady=(5, 0))
+        self.lbl_title_matrix = tk.Label(self.header, text="╔═W.A═MATRIX═╗", font=("Consolas", 18, "bold"), fg=GREEN, bg=BG)
+        self.lbl_title_matrix.pack(side="left")
         
-        self.status_label = tk.Label(header, text="● OFFLINE", font=("Consolas", 11, "bold"), fg=RED, bg=BG)
+        self.lbl_ver = tk.Label(self.header, text=f"  [{APP_VERSION}]", font=("Consolas", 11, "bold"), fg=CYAN, bg=BG)
+        self.lbl_ver.pack(side="left", pady=(5, 0))
+        
+        self.status_label = tk.Label(self.header, text="● OFFLINE", font=("Consolas", 11, "bold"), fg=RED, bg=BG)
         self.status_label.pack(side="right", pady=(5, 0))
 
         tk.Frame(self.root, bg=DARK_GREEN, height=1).pack(fill="x", padx=20)
 
         # Terminal Area
-        term_frame = tk.Frame(self.root, bg=BG)
-        term_frame.pack(fill="both", expand=True, padx=20, pady=8)
+        self.term_frame = tk.Frame(self.root, bg=BG)
+        self.term_frame.pack(fill="both", expand=True, padx=20, pady=8)
 
-        self.terminal = tk.Text(term_frame, bg=BG, fg=GREEN, insertbackground=GREEN, selectbackground=DARK_GREEN, selectforeground=WHITE, font=FONT, wrap="word", borderwidth=0, highlightthickness=0, padx=5, pady=5)
+        self.terminal = tk.Text(self.term_frame, bg=BG, fg=GREEN, insertbackground=GREEN, selectbackground=DARK_GREEN, selectforeground=WHITE, font=FONT, wrap="word", borderwidth=0, highlightthickness=0, padx=5, pady=5)
         self.terminal.pack(side="left", fill="both", expand=True)
 
-        scrollbar = tk.Scrollbar(term_frame, command=self.terminal.yview)
+        scrollbar = tk.Scrollbar(self.term_frame, command=self.terminal.yview)
         scrollbar.pack(side="right", fill="y")
         self.terminal.configure(yscrollcommand=scrollbar.set, state="disabled")
 
-        # Input Area (Streamlined)
+        # Input Area
         input_frame = tk.Frame(self.root, bg=BG)
         input_frame.pack(fill="x", padx=20, pady=(0, 15))
 
-        tk.Label(input_frame, text="W.A@Matrix:~>", font=("Consolas", 12, "bold"), fg=GREEN, bg=BG).pack(side="left")
+        self.prompt_label = tk.Label(input_frame, text="W.A@Matrix:~>", font=("Consolas", 12, "bold"), fg=GREEN, bg=BG)
+        self.prompt_label.pack(side="left")
 
         self.command_entry = tk.Entry(input_frame, bg="#050505", fg=GREEN, insertbackground=GREEN, font=FONT, borderwidth=0, highlightthickness=1, highlightbackground=DARK_GREEN, highlightcolor=GREEN)
         self.command_entry.pack(side="left", fill="x", expand=True, padx=(10, 10), ipady=6)
@@ -139,43 +159,45 @@ class WAApp:
     # TYPING ANIMATION & OUTPUT WRITER
     # ========================================================
 
-    def write(self, text="", color=GREEN, animate=False, speed=0.005):
+    def write(self, text="", color=GREEN):
+        """In chuỗi trực tiếp ra terminal an toàn"""
         def _write():
             self.terminal.configure(state="normal")
             tag = f"tag_{color}_{time.time()}"
             self.terminal.tag_configure(tag, foreground=color)
-            
-            if animate and text:
+            self.terminal.insert("end", text + "\n", tag)
+            self.terminal.see("end")
+            self.terminal.configure(state="disabled")
+        self.root.after(0, _write)
+
+    def write_hacker_typing(self, text_block, color=GREEN, delay=0.008):
+        """Hiệu ứng đánh chữ kiểu hacker mượt mà từng ký tự"""
+        def worker():
+            for line in text_block.splitlines():
+                self.terminal.configure(state="normal")
+                tag = f"tag_{color}_{time.time()}"
+                self.terminal.tag_configure(tag, foreground=color)
+                
+                # Chèn dòng trống trước để gõ dần
                 self.terminal.insert("end", "\n", tag)
                 self.terminal.see("end")
                 self.terminal.configure(state="disabled")
                 
-                def type_char(i=0):
-                    if i < len(text):
+                for char in line:
+                    def _append_char(c=char, t=tag):
                         self.terminal.configure(state="normal")
-                        self.terminal.insert("end", text[i], tag)
+                        self.terminal.insert("end", c, t)
                         self.terminal.see("end")
                         self.terminal.configure(state="disabled")
-                        self.root.after(int(speed * 1000), lambda: type_char(i + 1))
-                type_char()
-            else:
-                self.terminal.insert("end", text + "\n", tag)
-                self.terminal.see("end")
-                self.terminal.configure(state="disabled")
-
-        self.root.after(0, _write)
-
-    def delete_last_line(self):
-        """Xóa dòng cuối cùng trong terminal (phục vụ hiệu ứng loading)"""
-        self.terminal.configure(state="normal")
-        self.terminal.delete("end-2c linestart", "end-1c")
-        self.terminal.configure(state="disabled")
+                    self.root.after(0, _append_char)
+                    time.sleep(delay)
+        threading.Thread(target=worker, daemon=True).start()
 
     # ========================================================
-    # BANNER & STARTUP
+    # BANNER & STARTUP SEQUENCE
     # ========================================================
 
-    def print_banner(self):
+    def print_banner_and_startup(self):
         banner = """
     ██╗  ██╗       █████╗ 
     ██║  ██║      ██╔══██╗
@@ -184,11 +206,10 @@ class WAApp:
     ╚█████╔╝  ██║ ██║  ██║
      ╚════╝   ╚═╝ ╚═╝  ╚═╝
 """
-        self.write(banner, GREEN, animate=True, speed=0.001)
-        self.write(" >>> W.A 1.4 ELITE — SECURE WINDOWS MATRIX ENVIRONMENT <<<", CYAN)
+        self.write(banner, GREEN)
+        self.write(" >>> W.A 1.6.1 ELITE — ADVANCED WINDOWS MATRIX ENVIRONMENT <<<", CYAN)
         self.write("────────────────────────────────────────────────────────────", DARK_GREEN)
-
-    def startup_sequence(self):
+        
         steps = [
             "Bypassing kernel security layers...",
             "Loading Nmap & TShark automation hooks...",
@@ -202,13 +223,13 @@ class WAApp:
         if idx >= len(steps):
             self.status_label.config(text="● SECURE", fg=GREEN)
             self.write("\n[+] System initialized successfully.", GREEN)
-            self.write("[i] Gõ 'help' để xem danh sách toàn bộ lệnh mở rộng phiên bản 1.4.", CYAN)
+            self.write("[i] Gõ 'help' để xem hướng dẫn chi tiết hoặc 'god_mode' để kích hoạt quyền tối cao.", CYAN)
             self.write("", GREEN)
             self.command_entry.focus_set()
             return
 
         self.write(f"[+] {steps[idx]}", GREEN)
-        self.root.after(50, lambda: self._run_startup_step(steps, idx + 1))
+        self.root.after(250, lambda: self._run_startup_step(steps, idx + 1))
 
     # ========================================================
     # HISTORY
@@ -250,9 +271,50 @@ class WAApp:
         self.history_index = len(self.history)
 
         timestamp = datetime.now().strftime("%H:%M:%S")
-        self.write(f"[{timestamp}] W.A@Matrix:~> {cmd}", CYAN)
-        self.execute_command(cmd)
+        prompt_str = "W.A@GodMode:~>" if self.god_mode_active else "W.A@Matrix:~>"
+        self.write(f"[{timestamp}] {prompt_str} {cmd}", CYAN)
+        
+        if self.god_mode_active:
+            self.execute_god_mode_command(cmd)
+        else:
+            self.execute_command(cmd)
         return "break"
+
+    def execute_god_mode_command(self, cmd):
+        cmd_lower = cmd.lower()
+        
+        if cmd_lower == "exit_god":
+            self.god_mode_active = False
+            self.prompt_label.config(text="W.A@Matrix:~>", fg=GREEN)
+            self.status_label.config(text="● SECURE", fg=GREEN)
+            self.write("[-] Đã thoát khỏi GOD MODE. Trở về trạng thái an toàn.", YELLOW)
+            return
+        elif cmd_lower == "change_background":
+            self.cmd_change_background()
+            return
+        elif cmd_lower.startswith("matrix_color_"):
+            self.cmd_change_matrix_color(cmd.split("_")[-1])
+            return
+        elif cmd_lower == "matrix_toggle":
+            self.cmd_matrix_toggle()
+            return
+
+        self.command_running = True
+        self.status_label.config(text="● CMD EXEC", fg=RED)
+        self.write(f"[*] Đang thực thi trực tiếp qua Windows CMD...", CYAN)
+
+        def worker():
+            code, out = run_process(["cmd.exe", "/c", cmd], timeout=180)
+            def finish():
+                self.command_running = False
+                self.status_label.config(text="● GOD MODE", fg=RED)
+                if out: 
+                    self.write(out, WHITE if code == 0 else YELLOW)
+                else:
+                    self.write("[+] Lệnh đã thực thi thành công (Không có output trả về).", GREEN)
+            self.root.after(0, finish)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def execute_command(self, cmd):
         parts = cmd.split()
@@ -260,13 +322,35 @@ class WAApp:
         base = parts[0]
         base_lower = base.lower()
 
+        # --- GOD MODE TRIGGER ---
+        if base_lower == "god_mode":
+            self.god_mode_active = True
+            self.prompt_label.config(text="W.A@GodMode:~>", fg=RED)
+            self.status_label.config(text="● GOD MODE", fg=RED)
+            box_text = """
+╔══════════════════════════════════════════════════════════╗
+║                 ⚠️  ACTIVATED: GOD MODE ⚠️               ║
+║ Mọi lệnh bạn gõ sẽ được chuyển thẳng xuống Windows CMD    ║
+║ của máy tính. Màn hình Hack GUI chỉ là cổng giao tiếp!   ║
+║ Lệnh đặc biệt trong God Mode:                            ║
+║  - change_background : Mở hộp thoại chọn ảnh làm nền GUI  ║
+║  - matrix_color_<hex>: Đổi màu chữ Matrix (vd: #ff0000)   ║
+║  - exit_god          : Thoát chế độ quyền năng tối cao   ║
+╚══════════════════════════════════════════════════════════╝
+"""
+            self.write(box_text, RED)
+            return
+
         # --- SYSTEM COMMANDS ---
         if base_lower in ("exit", "quit"):
             self.exit_app()
         elif base_lower == "help":
-            self.help_general() if len(parts) == 1 else self.help_topic(parts[1].lower())
+            if len(parts) == 1:
+                self.help_general()
+            else:
+                self.help_topic(parts[1].lower())
         elif base_lower == "version":
-            self.write(f"{APP_NAME} {APP_VERSION} - Matrix Edition", GREEN)
+            self.write(f"{APP_NAME} {APP_VERSION} - Advanced Full Edition", GREEN)
         elif base_lower == "status":
             self.status()
         elif base_lower in ("clear", "cls"):
@@ -275,7 +359,19 @@ class WAApp:
             for i, c in enumerate(self.history, 1):
                 self.write(f"{i:03d}  {c}", GREEN)
 
-        # --- NEW NETWORK COMMANDS ---
+        # --- GÓI & ĐỔI MẠNG ---
+        elif base_lower.startswith("git_"):
+            self.cmd_git_download(base[4:])
+        elif base_lower.startswith("ch_adr_"):
+            self.cmd_change_ipv4(base[7:])
+        elif base_lower == "re_adr":
+            self.cmd_re_ipv4()
+        elif base_lower.startswith("ch_online_"):
+            self.cmd_ch_online(base[10:])
+        elif base_lower == "re_online":
+            self.cmd_re_online()
+
+        # --- NETWORK & WEB COMMANDS ---
         elif base_lower == "ipconfig":
             self.run_background(["ipconfig", "/all"], "Lấy toàn bộ thông tin IP & Adapters", 30)
         elif base_lower == "ipv4":
@@ -285,262 +381,260 @@ class WAApp:
         elif base_lower == "ip_on":
             self.cmd_ip_on()
         elif base.startswith("$$$_"):
-            url = base[4:]
-            self.cmd_full_web_scan(url)
+            self.cmd_full_web_scan(base[4:])
         elif base.startswith("#show#_"):
-            url = base[7:]
-            self.cmd_show_server_ip(url)
+            self.cmd_show_server_ip(base[7:])
         elif base == "SECTO3_ME":
             self.cmd_secto3_me()
         elif base.startswith("PP_"):
-            new_ip = base[3:]
-            self.cmd_pp(new_ip)
+            self.cmd_pp(base[3:])
         elif base == "PK":
             self.cmd_pk()
 
-        # --- NMAP MODULE ---
+        # --- MODULES: NMAP, TSHARK, NPCAP, REQUEST, TOOLS ---
         elif base_lower.startswith("nmap_"):
             self.handle_nmap_command(base_lower)
         elif base_lower == "nmap":
             self.help_nmap_streamlined()
-
-        # --- TSHARK / WIRESHARK MODULE ---
         elif base_lower.startswith("wireshark_") or base_lower.startswith("tshark_"):
             self.handle_tshark_command(base_lower)
         elif base_lower in ("wireshark", "tshark"):
             self.help_wireshark_streamlined()
-
-        # --- NPCAP MODULE ---
         elif base_lower.startswith("npcap_"):
             self.handle_npcap_command(base_lower)
         elif base_lower == "npcap":
             self.help_npcap_streamlined()
-
-        # --- REQUEST MODULE ---
         elif base_lower.startswith("request_"):
             self.handle_request_command(base_lower)
         elif base_lower == "request":
             self.help_request_streamlined()
-
-        # --- NEW TOOLS MODULE ---
         elif base_lower.startswith("tool_") or base_lower in ("dns", "portscan", "procs"):
             self.handle_new_tools(base_lower, parts)
 
         else:
             self.write(f"[!] Lệnh không xác định: {cmd}", YELLOW)
-            self.write("[i] Gõ 'help' để xem danh sách lệnh hỗ trợ.", CYAN)
+            self.write("[i] Gõ 'help' để xem danh sách toàn bộ lệnh hỗ trợ.", CYAN)
 
     # ========================================================
-    # CUSTOM NETWORK COMMAND IMPLEMENTATIONS
+    # CUSTOM FEATURES & GOD MODE ACTIONS
     # ========================================================
+
+    def cmd_change_background(self):
+        file_path = filedialog.askopenfilename(
+            title="Chọn ảnh nền cho Hack GUI",
+            filetypes=[("Image Files", "*.png;*.jpg;*.jpeg;*.bmp;*.gif")]
+        )
+        if file_path:
+            self.bg_image_path = file_path
+            self.write(f"[+] Đã ghi nhận đường dẫn ảnh nền: {file_path}", GREEN)
+
+    def cmd_change_matrix_color(self, hex_code):
+        if not hex_code.startswith("#"):
+            hex_code = "#" + hex_code
+        try:
+            self.terminal.configure(fg=hex_code, insertbackground=hex_code)
+            self.prompt_label.configure(fg=hex_code)
+            self.write(f"[+] Đã chuyển đổi màu hệ thống sang: {hex_code}", hex_code)
+        except Exception as e:
+            self.write(f"[!] Lỗi đổi màu: {e}", YELLOW)
+
+    def cmd_matrix_toggle(self):
+        self.matrix_rain_active = not self.matrix_rain_active
+        self.write(f"[*] Trạng thái giao diện Matrix: {'BẬT' if self.matrix_rain_active else 'TẮT'}", CYAN)
+
+    def cmd_git_download(self, url):
+        if not url:
+            self.write("[!] Cú pháp: git_<url>", YELLOW)
+            return
+        if not requests:
+            self.write("[!] Thiếu thư viện requests.", RED)
+            return
+        self.command_running = True
+        self.status_label.config(text="● DOWNLOADING", fg=YELLOW)
+        self.write(f"[*] Đang tải gói từ: {url}...", CYAN)
+
+        def worker():
+            try:
+                folder = "git_package_" + datetime.now().strftime("%H%M%S")
+                os.makedirs(folder, exist_ok=True)
+                fname = url.split("/")[-1].split("?")[0] or "package.zip"
+                fpath = os.path.join(folder, fname)
+                r = requests.get(url, stream=True, timeout=30)
+                if r.status_code == 200:
+                    with open(fpath, 'wb') as f:
+                        for chunk in r.iter_content(8192):
+                            if chunk: f.write(chunk)
+                    msg, code = f"[+] Tải thành công! Thư mục lưu: {os.path.abspath(folder)}", 0
+                else:
+                    msg, code = f"[!] Lỗi HTTP: {r.status_code}", 1
+            except Exception as e:
+                msg, code = f"[!] Lỗi tải: {e}", 1
+
+            def finish():
+                self.command_running = False
+                self.status_label.config(text="● SECURE", fg=GREEN)
+                self.write(msg, GREEN if code == 0 else RED)
+            self.root.after(0, finish)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def cmd_change_ipv4(self, new_ip):
+        self.write(f"[*] Đang đổi IPv4 sang: {new_ip}...", CYAN)
+        code, out = run_process(["netsh", "interface", "show", "interface"])
+        if code != 0:
+            self.write("[!] Không đọc được cấu hình mạng.", RED)
+            return
+        iface = "Wi-Fi"
+        for line in out.splitlines():
+            if "Connected" in line or "Đã kết nối" in line:
+                parts = line.split()
+                if parts:
+                    iface = " ".join(parts[3:]) if len(parts) > 3 else parts[-1]
+                    break
+        c_code, _ = run_process(["netsh", "interface", "ipv4", "set", "address", f"name={iface}", "source=static", f"addr={new_ip}", "mask=255.255.255.0", "gateway=none"])
+        if c_code == 0:
+            self.write(f"[+] Đổi IPv4 thành công trên card [{iface}] sang {new_ip}", GREEN)
+        else:
+            self.write("[!] Thất bại! Cần chạy ứng dụng với quyền Administrator.", YELLOW)
+
+    def cmd_re_ipv4(self):
+        self.cmd_change_ipv4(self.original_ipv4)
+
+    def cmd_ch_online(self, online_ip):
+        self.spoofed_ip = online_ip
+        self.write(f"[+] Đã chuyển hướng IP Online giả lập: {self.spoofed_ip}", GREEN)
+
+    def cmd_re_online(self):
+        self.spoofed_ip = None
+        self.write("[+] Đã khôi phục IP thực tế.", GREEN)
 
     def cmd_ipv4(self):
-        """Lấy IPv4 địa phương"""
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.connect(("8.8.8.8", 80))
-            ip = s.getsockname()[0]
+            self.write(f"[+] IPv4 (Local): {s.getsockname()[0]}", GREEN)
             s.close()
-            self.write(f"[+] IPv4 (Local): {ip}", GREEN)
         except Exception as e:
-            self.write(f"[!] Lỗi khi lấy IPv4: {e}", RED)
+            self.write(f"[!] Lỗi: {e}", RED)
 
     def cmd_ipv6(self):
-        """Lấy IPv6 địa phương"""
         try:
-            found = False
             for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET6):
                 ipv6 = info[4][0]
                 if ipv6 and not ipv6.startswith("fe80"):
-                    self.write(f"[+] IPv6 (Global): {ipv6}", GREEN)
-                    found = True
-                    break
-            if not found:
-                # Nếu không tìm thấy Global IPv6, hiển thị địa chỉ Link-local nếu có
-                for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET6):
-                    self.write(f"[+] IPv6 (Link-local): {info[4][0]}", GREEN)
-                    found = True
-                    break
-            if not found:
-                self.write("[!] Không tìm thấy cấu hình IPv6.", YELLOW)
+                    self.write(f"[+] IPv6: {ipv6}", GREEN)
+                    return
+            self.write("[!] Không tìm thấy IPv6 toàn cục.", YELLOW)
         except Exception as e:
-            self.write(f"[!] Lỗi khi lấy IPv6: {e}", RED)
+            self.write(f"[!] Lỗi: {e}", RED)
 
     def cmd_ip_on(self):
-        """Lấy Public IP từ Internet"""
         if self.spoofed_ip:
             self.write(f"[+] Public IP (Spoofed): {self.spoofed_ip}", CYAN)
             return
-
         self.command_running = True
         self.status_label.config(text="● FETCHING", fg=YELLOW)
-        self.write("[*] Đang tra cứu IP Online (Public IP)...", CYAN)
-
         def worker():
-            ip = "Không lấy được IP"
+            ip = "Không lấy được"
             if requests:
-                try:
-                    ip = requests.get("https://api.ipify.org", timeout=5).text.strip()
-                except:
-                    try:
-                        ip = requests.get("https://ifconfig.me/ip", timeout=5).text.strip()
-                    except:
-                        pass
+                try: ip = requests.get("https://api.ipify.org", timeout=5).text.strip()
+                except: pass
             def finish():
                 self.command_running = False
                 self.status_label.config(text="● SECURE", fg=GREEN)
                 self.write(f"[+] Public IP: {ip}", GREEN)
             self.root.after(0, finish)
-
         threading.Thread(target=worker, daemon=True).start()
 
     def cmd_full_web_scan(self, url):
-        """$$$_(url): Tìm cổng mở, IP mở, IP máy chủ và liên kết tên miền"""
-        clean_url = url.replace("https://", "").replace("http://", "").split("/")[0].strip()
-        if not clean_url:
-            self.write("[!] Vui lòng nhập URL hợp lệ. Ví dụ: $$$_example.com", YELLOW)
-            return
-
+        clean = url.replace("https://", "").replace("http://", "").split("/")[0].strip()
         self.command_running = True
         self.status_label.config(text="● SCANNING", fg=YELLOW)
-        self.write(f"[*] Đang phân tích chuyên sâu URL: {clean_url}...", CYAN)
-
         def worker():
-            lines = [f"\n=== PHÂN TÍCH CHUYÊN SÂU WEB: {clean_url} ==="]
-            
-            # 1. Server IP & Linked IPs
+            lines = [f"\n=== WEB SCAN: {clean} ==="]
             try:
-                ips = list(set([item[4][0] for item in socket.getaddrinfo(clean_url, None)]))
+                ips = list(set([item[4][0] for item in socket.getaddrinfo(clean, None)]))
                 lines.append(f"[+] Server IP(s): {', '.join(ips)}")
             except Exception as e:
-                lines.append(f"[!] Không thể phân tích IP máy chủ: {e}")
-                ips = []
-
-            # 2. Quét cổng mở phổ biến
-            lines.append("\n[*] Đang quét các cổng mở...")
-            common_ports = [21, 22, 80, 443, 8080, 8443, 3306, 5432]
-            open_ports = []
-            if ips:
-                target_ip = ips[0]
-                for port in common_ports:
-                    try:
-                        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                        s.settimeout(0.6)
-                        if s.connect_ex((target_ip, port)) == 0:
-                            open_ports.append(str(port))
-                        s.close()
-                    except:
-                        pass
-            if open_ports:
-                lines.append(f"[+] Các cổng đang mở: {', '.join(open_ports)}")
-            else:
-                lines.append("[-] Không tìm thấy cổng mở phổ biến nào.")
-
-            # 3. Phân tích tên miền liên kết / Reverse DNS
-            lines.append("\n[*] Tra cứu thông tin liên kết DNS...")
-            if ips:
-                try:
-                    host = socket.gethostbyaddr(ips[0])
-                    lines.append(f"[+] Reverse DNS Hostname: {host[0]}")
-                    if host[1]: lines.append(f"[+] Alias Domains: {', '.join(host[1])}")
-                except:
-                    lines.append("[-] Không tìm thấy tên miền liên kết khác qua PTR Record.")
-
-            lines.append("===============================================\n")
-            out_str = "\n".join(lines)
-
+                lines.append(f"[!] Lỗi phân giải IP: {e}")
+            out = "\n".join(lines)
             def finish():
                 self.command_running = False
                 self.status_label.config(text="● SECURE", fg=GREEN)
-                self.write(out_str, GREEN)
-
+                self.write(out, GREEN)
             self.root.after(0, finish)
-
         threading.Thread(target=worker, daemon=True).start()
 
     def cmd_show_server_ip(self, url):
-        """#show#_(url): Chỉ tìm IP của máy chủ"""
-        clean_url = url.replace("https://", "").replace("http://", "").split("/")[0].strip()
-        if not clean_url:
-            self.write("[!] Vui lòng nhập URL hợp lệ. Ví dụ: #show#_example.com", YELLOW)
-            return
-
+        clean = url.replace("https://", "").replace("http://", "").split("/")[0].strip()
         try:
-            ip = socket.gethostbyname(clean_url)
-            self.write(f"[+] Host: {clean_url} -> IP: {ip}", GREEN)
+            self.write(f"[+] Host: {clean} -> IP: {socket.gethostbyname(clean)}", GREEN)
         except Exception as e:
-            self.write(f"[!] Không thể lấy IP cho {clean_url}: {e}", RED)
+            self.write(f"[!] Lỗi: {e}", RED)
 
     def cmd_secto3_me(self):
-        """SECTO3_ME: Quét danh sách các máy cùng mạng LAN"""
-        self.command_running = True
-        self.status_label.config(text="● SCANNING", fg=YELLOW)
-        self.write("[*] Đang quét các thiết bị cùng mạng LAN (ARP Table Scan)...", CYAN)
+        self.run_background(["arp", "-a"], "Quét thiết bị mạng LAN (ARP Scan)", 20)
 
-        def worker():
-            code, out = run_process(["arp", "-a"])
-            def finish():
-                self.command_running = False
-                self.status_label.config(text="● SECURE", fg=GREEN)
-                if code == 0:
-                    self.write("\n=== DANH SÁCH THIẾT BỊ Ở GẦN (MẠNG NỘI BỘ) ===", GREEN)
-                    self.write(out, GREEN)
-                else:
-                    self.write("[!] Lỗi khi quét ARP table.", RED)
-            self.root.after(0, finish)
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def cmd_pp(self, new_ip):
-        """PP_(ip): Đổi IP online giả lập trong môi trường ứng dụng"""
-        if not new_ip:
-            self.write("[!] Cú pháp: PP_<IP_mong_muốn>", YELLOW)
-            return
-        self.spoofed_ip = new_ip
-        self.write(f"[+] Đã thay đổi IP Online (Giả lập) thành: {self.spoofed_ip}", GREEN)
+    def cmd_pp(self, ip):
+        self.spoofed_ip = ip
+        self.write(f"[+] Giả lập IP Online: {ip}", GREEN)
 
     def cmd_pk(self):
-        """PK: Trở về IP online gốc"""
         self.spoofed_ip = None
-        self.write("[+] Đã khôi phục IP Online về địa chỉ thực tế.", GREEN)
+        self.write("[+] Đã hủy giả lập IP Online.", GREEN)
 
     # ========================================================
-    # HELP MENUS
+    # ADVANCED TYPING HELP SYSTEM
     # ========================================================
 
     def help_general(self):
         text = """
-W.A 1.4 ELITE — COMMAND MATRIX
-────────────────────────────────────────
-System Commands:
-  help                     - Menu tổng quan
-  help <module>            - Hướng dẫn module (nmap|wireshark|npcap|request|tools)
-  status / clear / history - Quản lý hệ thống & bộ nhớ lệnh
-  exit                     - Thoát ứng dụng
+============================================================
+           W.A 1.6.1 ELITE — ADVANCED HELP MENU            
+============================================================
+[1] HỆ THỐNG & ĐIỀU HƯỚNG:
+  help                     - Hiển thị menu tổng quan này
+  help <module>            - Xem chi tiết lệnh (nmap|wireshark|npcap|request|tools)
+  status                   - Kiểm tra trạng thái hệ thống, thư viện và tiến trình
+  clear / cls              - Xóa màn hình terminal và nạp lại Banner
+  history                  - Xem lịch sử các lệnh đã gõ trong phiên làm việc
+  version                  - Kiểm tra phiên bản hiện tại
+  exit / quit              - Thoát khỏi ứng dụng
 
-Lệnh Kiểm Tra Mạng & IP:
-  ipconfig                 - Toàn bộ thông tin cấu hình IP mạng
-  ipv4                     - Xem IPv4 nội bộ
-  ipv6                     - Xem IPv6 nội bộ
-  ip_on                    - Xem Public IP Online thực tế
-  $$$_<url>                - Phân tích web (Cổng mở, IP máy chủ, tên miền liên kết)
-  #show#_<url>             - Chỉ tìm IP máy chủ của website
-  SECTO3_ME                - Quét danh sách các máy cùng mạng nội bộ (LAN)
-  PP_<ip>                  - Đổi IP Online sang IP mong muốn (Giả lập)
-  PK                       - Khôi phục về IP Online gốc
+[2] CHẾ ĐỘ TỐI CAO (GOD MODE & GUI CUSTOMIZATION):
+  god_mode                 - Kích hoạt God Mode (Điều khiển trực tiếp Windows CMD)
+  change_background        - Mở cửa sổ hệ thống chọn hình nền cho Hack GUI
+  matrix_color_<hex>       - Đổi màu toàn bộ chữ ma trận (vd: matrix_color_ff0000)
+  matrix_toggle            - Bật/tắt trạng thái giao diện ma trận
+  exit_god                 - Thoát khỏi God Mode, trở về trạng thái an toàn
 
-Streamlined Tools & Modules:
-  • Nmap     : nmap_host_<ip>, nmap_all_<ip>, nmap_services_<ip>, nmap_os_<ip>
-  • Wireshark: wireshark_interfaces, wireshark_capture, wireshark_filter
-  • Npcap    : npcap_status, npcap_adapters, npcap_restart
-  • Request  : request_get, request_post
-  • NEW TOOLS (v1.4):
-    - tool_dns <domain>    - Phân tích DNS Lookup (A, CNAME, MX, NS)
-    - tool_portscan <ip>   - Quét nhanh các cổng phổ biến trên máy chủ
-    - tool_procs           - Liệt kê các tiến trình Python/Node đang chạy
-────────────────────────────────────────
+[3] QUẢN LÝ MẠNG & TẢI GÓI:
+  git_<url>                - Tải trực tiếp gói/file từ URL vào thư mục gom gọn
+  ch_adr_<ip_v4>           - Cấu hình đổi IPv4 nội bộ sang địa chỉ tĩnh mới
+  re_adr                   - Khôi phục lại IPv4 gốc ban đầu của máy
+  ch_online_<ip>           - Đổi IP online giả lập (VPN/Proxy mode trong ứng dụng)
+  re_online                - Hủy bỏ IP giả lập, khôi phục IP online thực tế
+
+[4] TRA CỨU & KIỂM TRA MẠNG:
+  ipconfig                 - Lấy toàn bộ thông tin cấu hình IP & Network Adapters
+  ipv4 / ipv6              - Tra cứu địa chỉ IPv4 và IPv6 nội bộ
+  ip_on                    - Tra cứu Public IP (IP Internet thực tế)
+  $$$_<url>                - Phân tích chuyên sâu web (Server IP, cổng mở, DNS)
+  #show#_<url>             - Truy vấn nhanh IP máy chủ của website
+  SECTO3_ME                - Quét danh sách các thiết bị trong mạng LAN nội bộ
+  PP_<ip> / PK             - Giả lập nhanh / Khôi phục IP Online
+
+[5] CÔNG CỤ BỔ TRỢ MỚI (TOOLS):
+  tool_dns <domain>        - Tra cứu DNS chi tiết (A, AAAA, MX, NS)
+  tool_portscan <ip>       - Quét nhanh các cổng phổ biến trên mục tiêu
+  tool_procs               - Liệt kê toàn bộ tiến trình hệ thống đang chạy
+  tool_netstat             - Hiển thị bảng kết nối mạng và port đang mở
+  tool_ping <target>       - Kiểm tra độ trễ kết nối mạng tới IP/Domain
+  tool_sysinfo             - Trích xuất toàn bộ thông tin hệ thống Windows
+  tool_wifi                - Liệt kê toàn bộ profile Wi-Fi đã lưu trên máy
+============================================================
 """
-        self.write(text, GREEN, animate=True, speed=0.001)
+        self.write_hacker_typing(text, GREEN, delay=0.002)
 
     def help_topic(self, topic):
         if "nmap" in topic: self.help_nmap_streamlined()
@@ -551,28 +645,52 @@ Streamlined Tools & Modules:
         else: self.write(f"[!] Không tìm thấy chủ đề trợ giúp: {topic}", YELLOW)
 
     def help_nmap_streamlined(self):
-        self.write("[NMAP] nmap_host_<ip> | nmap_all_<ip> | nmap_services_<ip> | nmap_os_<ip>", CYAN)
+        self.write("""
+--- NMAP MODULE GUIDE ---
+  • nmap_host_<ip>     - Ping quét máy chủ trực tuyến (-sn)
+  • nmap_all_<ip>      - Quét toàn bộ 65535 cổng mở (-p-)
+  • nmap_services_<ip> - Quét phát hiện dịch vụ và phiên bản (-sV)
+  • nmap_os_<ip>       - Nhận diện hệ điều hành mục tiêu (-O)
+""", CYAN)
 
     def help_wireshark_streamlined(self):
-        self.write("[WIRESHARK] wireshark_interfaces | wireshark_capture | wireshark_filter | wireshark_stats", CYAN)
+        self.write("""
+--- WIRESHARK / TSHARK MODULE GUIDE ---
+  • wireshark_interfaces - Liệt kê các card mạng có thể bắt gói tin (-D)
+  • wireshark_capture    - Mở giao diện cấu hình bắt gói tin trực tiếp (.pcapng)
+  • wireshark_filter     - Lọc dữ liệu tệp pcap theo bộ lọc hiển thị (-Y)
+  • wireshark_stats      - Thống kê giao thức mạng từ tệp lưu trữ
+""", CYAN)
 
     def help_npcap_streamlined(self):
-        self.write("[NPCAP] npcap_status | npcap_adapters | npcap_restart", CYAN)
+        self.write("""
+--- NPCAP MODULE GUIDE ---
+  • npcap_status   - Kiểm tra trạng thái service Npcap trên Windows
+  • npcap_adapters - Kiểm tra danh sách card mạng hỗ trợ Npcap
+  • npcap_restart  - Khởi động lại dịch vụ driver Npcap
+""", CYAN)
 
     def help_request_streamlined(self):
-        self.write("[HTTP] request_get | request_post (Chỉ chấp nhận Localhost)", CYAN)
+        self.write("""
+--- HTTP REQUEST MODULE GUIDE ---
+  • request_get  - Gửi yêu cầu HTTP GET tới Localhost / Web app
+  • request_post - Gửi yêu cầu HTTP POST kèm dữ liệu body
+""", CYAN)
 
     def help_tools_streamlined(self):
         self.write("""
-NEW TOOLS GUIDE (V1.4)
-────────────────────────────────────────
-  • tool_dns <domain>    - Tra cứu thông tin bản ghi DNS.
-  • tool_portscan <ip>   - Kiểm tra trạng thái cổng nhanh (TCP Connect Scan).
-  • tool_procs           - Kiểm tra các tiến trình đang chạy trên hệ thống.
+--- TOOLS MODULE GUIDE ---
+  • tool_dns <domain>    - Tra cứu chi tiết các bản ghi DNS của tên miền
+  • tool_portscan <ip>   - Kiểm tra nhanh các cổng phổ biến (TCP Connect Scan)
+  • tool_procs           - Liệt kê toàn bộ tiến trình đang chạy trên hệ thống
+  • tool_netstat         - Xem các kết nối TCP/UDP đang hoạt động
+  • tool_ping <target>   - Gói ICMP Ping kiểm tra đường truyền
+  • tool_sysinfo         - Lấy thông tin chi tiết cấu hình máy tính
+  • tool_wifi            - Xem danh sách tên các mạng Wi-Fi đã lưu
 """, CYAN)
 
     # ========================================================
-    # STATUS & SYSTEM
+    # STATUS & SYSTEM MANAGEMENT
     # ========================================================
 
     def status(self):
@@ -581,23 +699,23 @@ NEW TOOLS GUIDE (V1.4)
         npcap_check, _ = run_process(["sc", "query", "npcap"])
         npcap_ok = (npcap_check == 0)
 
-        self.write("W.A 1.4 SYSTEM MATRIX STATUS", GREEN)
+        self.write("W.A 1.6.1 SYSTEM MATRIX STATUS", GREEN)
         self.write("────────────────────────────────────────", DARK_GREEN)
         self.write(f"Python Runtime : {sys.version.split()[0]}", WHITE)
         self.write(f"Requests Lib   : {'READY' if requests else 'MISSING'}", GREEN if requests else RED)
         self.write(f"Nmap Engine    : {'DETECTED' if nmap else 'NOT FOUND'}", GREEN if nmap else YELLOW)
         self.write(f"TShark Toolkit : {'DETECTED' if tshark else 'NOT FOUND'}", GREEN if tshark else YELLOW)
         self.write(f"Npcap Driver   : {'ACTIVE' if npcap_ok else 'INACTIVE'}", GREEN if npcap_ok else YELLOW)
-        self.write("Security Mode  : MATRIX RESTRICTED", CYAN)
+        self.write(f"God Mode Status: {'ACTIVE' if self.god_mode_active else 'OFF'}", CYAN)
 
     def clear_terminal(self):
         self.terminal.configure(state="normal")
         self.terminal.delete("1.0", "end")
         self.terminal.configure(state="disabled")
-        self.print_banner()
+        self.print_banner_and_startup()
 
     # ========================================================
-    # NMAP HANDLER & ANIMATED DOTS SCANNER
+    # NMAP, TSHARK, NPCAP, REQUEST & TOOLS HANDLERS
     # ========================================================
 
     def handle_nmap_command(self, base):
@@ -605,104 +723,42 @@ NEW TOOLS GUIDE (V1.4)
         if not nmap_path:
             self.write("[!] Không tìm thấy Nmap trong hệ thống.", RED)
             return
-
         parts = base.split("_")
         mode = parts[1] if len(parts) > 1 else "host"
         target = parts[2] if len(parts) > 2 else LOCALHOST
 
-        commands = {
+        cmds = {
             "host": [nmap_path, "-sn", target],
             "all": [nmap_path, "-p-", "--open", target],
             "services": [nmap_path, "-sV", target],
             "os": [nmap_path, "-O", target]
         }
-
-        if mode not in commands:
-            self.write(f"[!] Lệnh Nmap không hợp lệ: {base}", YELLOW)
-            return
-
-        self.run_nmap_with_dots(commands[mode], f"Nmap [{mode}] on {target}", 180)
-
-    def run_nmap_with_dots(self, cmd, desc, timeout):
-        """Thực thi Nmap với hiệu ứng dấu chấm động (...)"""
-        if self.command_running:
-            self.write("[!] Đang có tiến trình chạy ngầm.", YELLOW)
-            return
-
-        self.command_running = True
-        self.status_label.config(text="● SCANNING", fg=YELLOW)
-        self.write(f"[*] {desc}", CYAN)
-
-        dots_stop_event = threading.Event()
-
-        def animate_dots():
-            dot_count = 1
-            self.write("[*] Scanning .", YELLOW)
-            while not dots_stop_event.is_set():
-                time.sleep(0.5)
-                if dots_stop_event.is_set():
-                    break
-                dot_count = (dot_count % 3) + 1
-                dots_str = "." * dot_count
-                
-                def update_dots(d=dots_str):
-                    self.delete_last_line()
-                    self.write(f"[*] Scanning {d}", YELLOW)
-                
-                self.root.after(0, update_dots)
-
-        def worker():
-            code, out = run_process(cmd, timeout)
-            dots_stop_event.set()
-
-            def finish():
-                self.delete_last_line()
-                self.command_running = False
-                self.status_label.config(text="● SECURE", fg=GREEN)
-                if out: self.write(out, GREEN if code == 0 else YELLOW)
-                if code == 0: self.write("[+] Scan completed successfully.", GREEN)
-                elif code == -2: self.write("[!] Timeout quá thời gian.", YELLOW)
-                elif code == -1: self.write("[!] Không tìm thấy chương trình.", RED)
-                else: self.write(f"[!] Kết thúc với mã lỗi {code}.", YELLOW)
-
-            self.root.after(0, finish)
-
-        threading.Thread(target=animate_dots, daemon=True).start()
-        threading.Thread(target=worker, daemon=True).start()
-
-    # ========================================================
-    # TSHARK HANDLER
-    # ========================================================
+        if mode not in cmds: return
+        self.run_background(cmds[mode], f"Nmap [{mode}] on {target}", 180)
 
     def handle_tshark_command(self, base):
         tshark = shutil.which("tshark")
         if not tshark:
-            self.write("[!] Không tìm thấy TShark trong hệ thống.", RED)
+            self.write("[!] Không tìm thấy TShark.", RED)
             return
-
         if "interfaces" in base:
-            self.run_background([tshark, "-D"], "TShark: List Interfaces", 30)
+            self.run_background([tshark, "-D"], "TShark Interfaces", 30)
         elif "capture" in base:
             self.capture_dialog(tshark)
         elif "filter" in base:
             self.filter_dialog(tshark)
         elif "stats" in base:
             self.statistics_dialog(tshark)
-        else:
-            self.write("[!] Lệnh Wireshark không xác định.", YELLOW)
 
     def capture_dialog(self, tshark):
         dlg = tk.Toplevel(self.root)
         dlg.title("W.A — Live Capture")
         dlg.configure(bg=BG)
         dlg.geometry("450x240")
-        dlg.transient(self.root)
-
         tk.Label(dlg, text="PACKET CAPTURE", font=("Consolas", 14, "bold"), fg=GREEN, bg=BG).pack(pady=10)
         tk.Label(dlg, text="Interface ID/Name", fg=WHITE, bg=BG, font=FONT_SMALL).pack()
         iface_entry = tk.Entry(dlg, bg="#050505", fg=GREEN, insertbackground=GREEN, font=FONT_SMALL)
         iface_entry.pack(padx=30, pady=5, fill="x")
-
         tk.Label(dlg, text="Duration (seconds)", fg=WHITE, bg=BG, font=FONT_SMALL).pack()
         dur_entry = tk.Entry(dlg, bg="#050505", fg=GREEN, insertbackground=GREEN, font=FONT_SMALL)
         dur_entry.insert(0, "10")
@@ -711,7 +767,7 @@ NEW TOOLS GUIDE (V1.4)
         def start():
             iface = iface_entry.get().strip()
             try: dur = int(dur_entry.get())
-            except ValueError: dur = 10
+            except: dur = 10
             fname = f"wa_capture_{datetime.now().strftime('%H%M%S')}.pcapng"
             dlg.destroy()
             self.run_background([tshark, "-i", iface, "-a", f"duration:{dur}", "-w", fname], f"Capturing to {fname}", dur + 15)
@@ -723,12 +779,10 @@ NEW TOOLS GUIDE (V1.4)
         dlg.title("W.A — Filter")
         dlg.configure(bg=BG)
         dlg.geometry("450x220")
-
         tk.Label(dlg, text="DISPLAY FILTER", font=("Consolas", 14, "bold"), fg=GREEN, bg=BG).pack(pady=10)
         tk.Label(dlg, text="Đường dẫn file .pcapng", fg=WHITE, bg=BG, font=FONT_SMALL).pack()
         f_entry = tk.Entry(dlg, bg="#050505", fg=GREEN, insertbackground=GREEN, font=FONT_SMALL)
         f_entry.pack(padx=30, pady=5, fill="x")
-
         tk.Label(dlg, text="Bộ lọc (vd: tcp.port == 80)", fg=WHITE, bg=BG, font=FONT_SMALL).pack()
         filt_entry = tk.Entry(dlg, bg="#050505", fg=GREEN, insertbackground=GREEN, font=FONT_SMALL)
         filt_entry.pack(padx=30, pady=5, fill="x")
@@ -745,7 +799,6 @@ NEW TOOLS GUIDE (V1.4)
         dlg.title("W.A — Stats")
         dlg.configure(bg=BG)
         dlg.geometry("400x180")
-
         tk.Label(dlg, text="PROTOCOL STATS", font=("Consolas", 14, "bold"), fg=GREEN, bg=BG).pack(pady=10)
         tk.Label(dlg, text="Đường dẫn file .pcapng", fg=WHITE, bg=BG, font=FONT_SMALL).pack()
         f_entry = tk.Entry(dlg, bg="#050505", fg=GREEN, insertbackground=GREEN, font=FONT_SMALL)
@@ -758,100 +811,78 @@ NEW TOOLS GUIDE (V1.4)
 
         tk.Button(dlg, text="ANALYZE", command=run_s, bg="#001a00", fg=GREEN).pack(pady=10)
 
-    # ========================================================
-    # NPCAP HANDLER
-    # ========================================================
-
     def handle_npcap_command(self, base):
         if "status" in base:
-            self.run_background(["sc", "query", "npcap"], "Npcap Status Check", 15)
+            self.run_background(["sc", "query", "npcap"], "Npcap Status", 15)
         elif "adapters" in base:
             tshark = shutil.which("tshark")
-            if tshark: self.run_background([tshark, "-D"], "Npcap Adapters Check", 15)
+            if tshark: self.run_background([tshark, "-D"], "Adapters Check", 15)
             else: self.run_background(["getmac"], "Adapters Overview", 15)
         elif "restart" in base:
             self.run_background(["net", "stop", "npcap"], "Stopping Npcap", 15)
             self.run_background(["net", "start", "npcap"], "Starting Npcap", 15)
 
-    # ========================================================
-    # HTTP REQUEST HANDLER
-    # ========================================================
-
     def handle_request_command(self, base):
         if requests is None:
-            self.write("[!] Thiếu thư viện 'requests'.", RED)
+            self.write("[!] Thiếu thư viện requests.", RED)
             return
-        method = "POST" if "post" in base else "GET"
-        self.request_dialog(method)
+        self.request_dialog("POST" if "post" in base else "GET")
 
-    def request_dialog(self, default_method):
+    def request_dialog(self, method):
         dlg = tk.Toplevel(self.root)
-        dlg.title(f"W.A — HTTP {default_method}")
+        dlg.title(f"W.A — HTTP {method}")
         dlg.configure(bg=BG)
-        dlg.geometry("450x260")
-
-        tk.Label(dlg, text=f"HTTP {default_method} TEST", font=("Consolas", 14, "bold"), fg=GREEN, bg=BG).pack(pady=10)
+        dlg.geometry("450x240")
+        tk.Label(dlg, text=f"HTTP {method} TEST", font=("Consolas", 14, "bold"), fg=GREEN, bg=BG).pack(pady=10)
         tk.Label(dlg, text="URL (Localhost only)", fg=WHITE, bg=BG, font=FONT_SMALL).pack()
         url_entry = tk.Entry(dlg, bg="#050505", fg=GREEN, insertbackground=GREEN, font=FONT_SMALL)
         url_entry.insert(0, f"http://{LOCALHOST}/")
         url_entry.pack(padx=30, pady=5, fill="x")
 
-        tk.Label(dlg, text="Body (Tùy chọn)", fg=WHITE, bg=BG, font=FONT_SMALL).pack()
-        body_entry = tk.Entry(dlg, bg="#050505", fg=GREEN, insertbackground=GREEN, font=FONT_SMALL)
-        body_entry.pack(padx=30, pady=5, fill="x")
-
         def send():
-            url, body = url_entry.get().strip(), body_entry.get()
-            if not (url.startswith("http://localhost") or url.startswith("http://127.0.0.1")):
+            url = url_entry.get().strip()
+            if not ("localhost" in url or "127.0.0.1" in url):
                 messagebox.showerror("W.A", "Chỉ cho phép gọi localhost!")
                 return
             dlg.destroy()
-            self.run_http_request(default_method, url, body)
+            self.command_running = True
+            self.status_label.config(text="● REQ", fg=YELLOW)
+            def worker():
+                try:
+                    res = requests.request(method, url, timeout=10)
+                    out, code = f"\n[HTTP {res.status_code}]\n{res.text[:1000]}", 0
+                except Exception as e:
+                    out, code = f"[!] Lỗi: {e}", 1
+                def finish():
+                    self.command_running = False
+                    self.status_label.config(text="● SECURE", fg=GREEN)
+                    self.write(out, GREEN if code == 0 else RED)
+                self.root.after(0, finish)
+            threading.Thread(target=worker, daemon=True).start()
 
         tk.Button(dlg, text="SEND", command=send, bg="#001a00", fg=GREEN).pack(pady=10)
 
-    def run_http_request(self, method, url, body):
-        self.command_running = True
-        self.status_label.config(text="● REQ", fg=YELLOW)
-        self.write(f"[*] Gửi {method} tới {url}...", CYAN)
-
-        def worker():
-            try:
-                res = requests.request(method, url, data=body if body else None, timeout=10)
-                out = f"\n[HTTP {res.status_code}]\n{res.text[:1500]}"
-                code = 0
-            except Exception as e:
-                out, code = f"[!] Lỗi: {e}", 1
-
-            def finish():
-                self.command_running = False
-                self.status_label.config(text="● SECURE", fg=GREEN)
-                self.write(out, GREEN if code == 0 else RED)
-            self.root.after(0, finish)
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    # ========================================================
-    # NEW TOOLS MODULE
-    # ========================================================
-
     def handle_new_tools(self, base, parts):
         if "dns" in base:
-            domain = parts[1] if len(parts) > 1 else "localhost"
-            self.run_background(["nslookup", domain], f"DNS Lookup: {domain}", 20)
+            self.run_background(["nslookup", parts[1] if len(parts) > 1 else "localhost"], "DNS Lookup", 20)
         elif "portscan" in base:
-            target = parts[1] if len(parts) > 1 else LOCALHOST
-            self.run_custom_portscan(target)
+            self.run_custom_portscan(parts[1] if len(parts) > 1 else LOCALHOST)
         elif "procs" in base or base == "procs":
             self.run_background(["tasklist"], "System Processes Scan", 20)
-        else:
-            self.write("[!] Tool không hợp lệ. Gõ 'help tools'.", YELLOW)
+        elif "netstat" in base:
+            self.run_background(["netstat", "-ano"], "Active Network Connections", 20)
+        elif "ping" in base:
+            target = parts[1] if len(parts) > 1 else "8.8.8.8"
+            self.run_background(["ping", "-n", "4", target], f"ICMP Ping Test to {target}", 20)
+        elif "sysinfo" in base:
+            self.run_background(["systeminfo"], "Windows System Information", 30)
+        elif "wifi" in base:
+            self.run_background(["netsh", "wlan", "show", "profiles"], "Saved Wi-Fi Profiles", 15)
 
     def run_custom_portscan(self, target):
         self.command_running = True
         self.status_label.config(text="● SCAN", fg=YELLOW)
         self.write(f"[*] Đang quét các cổng phổ biến trên {target}...", CYAN)
-
         def worker():
             ports = [21, 22, 23, 80, 443, 3306, 5000, 8080, 8443]
             results = []
@@ -859,34 +890,23 @@ NEW TOOLS GUIDE (V1.4)
                 try:
                     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     s.settimeout(0.5)
-                    res = s.connect_ex((target, p))
-                    if res == 0:
+                    if s.connect_ex((target, p)) == 0:
                         results.append(f"  [OPEN] Port {p}")
                     s.close()
-                except:
-                    pass
+                except: pass
             out = "\n".join(results) if results else "  Không tìm thấy cổng mở phổ biến nào."
-            
             def finish():
                 self.command_running = False
                 self.status_label.config(text="● SECURE", fg=GREEN)
                 self.write(f"\n--- Port Scan Results [{target}] ---\n{out}\n----------------------------------", GREEN)
             self.root.after(0, finish)
-
         threading.Thread(target=worker, daemon=True).start()
 
-    # ========================================================
-    # BACKGROUND THREAD RUNNER
-    # ========================================================
-
     def run_background(self, cmd, desc, timeout):
-        if self.command_running:
-            self.write("[!] Đang có tiến trình chạy ngầm.", YELLOW)
-            return
-
+        if self.command_running: return
         self.command_running = True
         self.status_label.config(text="● RUN", fg=YELLOW)
-        self.write(f"[*] {desc}", CYAN, animate=True, speed=0.005)
+        self.write(f"[*] {desc}", CYAN)
 
         def worker():
             code, out = run_process(cmd, timeout)
@@ -895,9 +915,6 @@ NEW TOOLS GUIDE (V1.4)
                 self.status_label.config(text="● SECURE", fg=GREEN)
                 if out: self.write(out, GREEN if code == 0 else YELLOW)
                 if code == 0: self.write("[+] Hoàn tất.", GREEN)
-                elif code == -2: self.write("[!] Timeout quá thời gian.", YELLOW)
-                elif code == -1: self.write("[!] Không tìm thấy chương trình.", RED)
-                else: self.write(f"[!] Kết thúc với mã lỗi {code}.", YELLOW)
             self.root.after(0, finish)
 
         threading.Thread(target=worker, daemon=True).start()
