@@ -339,3 +339,6 @@ UNDERSTAND
 **Made with Python on Windows. 🐍🪟**
 
 ⭐ If you find the project interesting, consider starring the repository.
+
+by VHLhuqduIEjhuqNpIEzDom0=
+
